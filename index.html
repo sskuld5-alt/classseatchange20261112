@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>학급 자리 배치 프로그램</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        /* 아기자기하고 밝은 디자인 테마 */
+        :root {
+            --primary-color: #ffb6c1;
+            --bg-color: #fff0f5;
+            --panel-bg: #ffffff;
+            --text-color: #4a4a4a;
+            --btn-hover: #ff9fb0;
+        }
+
+        body {
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        /* 화면 공통 */
+        .screen {
+            background-color: var(--panel-bg);
+            border-radius: 20px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+            padding: 40px;
+            width: 100%;
+            max-width: 1200px;
+            display: none;
+            box-sizing: border-box;
+            margin-bottom: 30px;
+        }
+        .screen.active {
+            display: flex;
+            flex-direction: column;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1, h2 {
+            text-align: center;
+            color: #ff8b9e;
+            margin-bottom: 30px;
+        }
+
+        /* 화면 1: 설정 화면 */
+        .setup-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+        }
+
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .input-group input {
+            width: 80px;
+            font-size: 1.2rem;
+            padding: 10px;
+            border: 2px solid var(--primary-color);
+            border-radius: 10px;
+            text-align: center;
+            outline: none;
+        }
+
+        .layout-options {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .layout-card {
+            width: 250px;
+            height: 180px;
+            border-radius: 15px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            border: 3px solid transparent;
+            transition: all 0.3s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-size: cover;
+            background-position: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        .layout-card::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(135deg, rgba(255,182,193,0.6), rgba(176,224,230,0.6));
+            backdrop-filter: blur(4px);
+            z-index: 1;
+        }
+        .layout-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+            border-color: var(--primary-color);
+        }
+        .layout-card span {
+            position: relative;
+            z-index: 2;
+            font-size: 1.4rem;
+            font-weight: bold;
+            color: #333;
+            background: rgba(255, 255, 255, 0.85);
+            padding: 10px 20px;
+            border-radius: 30px;
+        }
+
+        /* 화면 2: 배치 화면 */
+        .main-container {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+        }
+
+        .left-panel {
+            flex: 1;
+            background-color: #fff9fa;
+            border: 2px solid var(--primary-color);
+            border-radius: 15px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            max-height: 80vh;
+        }
+        
+        .file-upload-container {
+            margin-bottom: 15px;
+        }
+        .btn-upload {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            background-color: #ffffff;
+            color: #ff6b82;
+            font-weight: bold;
+            border-radius: 10px;
+            cursor: pointer;
+            text-align: center;
+            box-sizing: border-box;
+            border: 2px solid #ffb6c1;
+            transition: all 0.2s;
+        }
+        .btn-upload:hover {
+            background-color: #ffb6c1;
+            color: white;
+        }
+
+        .input-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding-right: 10px;
+        }
+        
+        /* 3열 구조 (위치 선택, 이름 입력, 고정좌석 선택) */
+        .student-row {
+            display: grid;
+            grid-template-columns: 95px 1fr 85px;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .student-row select, .student-row input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            outline: none;
+            font-size: 0.95rem;
+        }
+        .student-row input { text-align: center; }
+        .student-row select:focus, .student-row input:focus { border-color: var(--primary-color); }
+        .fixed-seat-select:disabled { background-color: #f5f5f5; cursor: not-allowed; color: #aaa; }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .btn {
+            padding: 15px;
+            font-size: 1rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            color: white;
+        }
+        .btn-primary { background-color: #ff8b9e; grid-column: 1 / -1; }
+        .btn-primary:hover { background-color: #ff6b82; }
+        .btn-secondary { background-color: #a0c4ff; color: #333;}
+        .btn-secondary:hover { background-color: #8bb5ff; }
+        .btn-print { background-color: #ffd6a5; color: #333; }
+        .btn-print:hover { background-color: #ffc27a; }
+        .btn-home { background-color: #caffbf; color: #333; grid-column: 1 / -1; }
+        .btn-home:hover { background-color: #a0f090; }
+
+        .right-panel {
+            flex: 2;
+            background-color: #ffffff;
+            border: 2px dashed var(--primary-color);
+            border-radius: 15px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+        
+        .board {
+            width: 60%;
+            background-color: #ffffff;
+            color: #333;
+            text-align: center;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            font-weight: bold;
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .seat-grid {
+            display: grid;
+            gap: 15px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .layout-4rows { grid-template-columns: repeat(4, 100px); }
+        .layout-5rows { grid-template-columns: repeat(5, 100px); }
+        .layout-3groups { grid-template-columns: 100px 100px 30px 100px 100px 30px 100px 100px; }
+
+        .seat {
+            width: 100px;
+            height: 70px;
+            background-color: #fff;
+            border: 2px solid #ffb6c1;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.1rem;
+            font-weight: bold;
+            position: relative;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+        }
+        .seat.empty {
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+        }
+        .seat-number {
+            position: absolute;
+            top: 5px;
+            left: 8px;
+            font-size: 0.8rem;
+            color: #999;
+            font-weight: normal;
+        }
+
+        /* 수동 입력 시 이름 영역 활성화 스타일 */
+        .seat-name {
+            display: inline-block;
+            min-width: 60px;
+            min-height: 25px;
+            line-height: 25px;
+            text-align: center;
+            border-radius: 4px;
+            outline: none;
+            transition: background-color 0.2s, border 0.2s;
+        }
+        .seat-name[contenteditable="true"] {
+            background-color: #ffe4e1;
+            border: 1px dashed #ffb6c1;
+            cursor: text;
+        }
+
+        /* 드래그 앤 드롭 시각 효과 */
+        .seat[draggable="true"] {
+            cursor: grab;
+        }
+        .seat[draggable="true"]:active {
+            cursor: grabbing;
+        }
+        .seat.over {
+            border: 2px dashed #ff6b82;
+            background-color: #fff0f5;
+            transform: scale(1.05);
+        }
+
+        /* 수동 입력 버튼 */
+        .btn-manual {
+            margin-top: 30px;
+            padding: 12px 35px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #ff6b82;
+            background: linear-gradient(135deg, #ffffff 0%, #fff0f5 100%);
+            border: 2px solid var(--primary-color);
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 182, 193, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            outline: none;
+        }
+        .btn-manual:hover {
+            color: white;
+            background: linear-gradient(135deg, #ffb6c1 0%, #ff8b9e 100%);
+            border-color: transparent;
+            box-shadow: 0 6px 20px rgba(255, 139, 158, 0.5);
+            transform: translateY(-3px);
+        }
+        .btn-manual:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 10px rgba(255, 139, 158, 0.5);
+        }
+        .btn-manual.active-mode {
+            color: white;
+            background: linear-gradient(135deg, #ff8b9e 0%, #ff6b82 100%);
+            border-color: transparent;
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 과거 자리배치 OCR 관련 영역 추가 스타일 */
+        .ocr-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 25px;
+        }
+        .btn-ocr {
+            padding: 12px 25px;
+            font-size: 1.05rem;
+            font-weight: bold;
+            color: #333;
+            background: linear-gradient(135deg, #e0f7fa 0%, #b2ebf2 100%);
+            border: 2px solid #80deea;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(128, 222, 234, 0.4);
+            transition: all 0.3s;
+            outline: none;
+            margin-bottom: 8px;
+        }
+        .btn-ocr:hover {
+            background: linear-gradient(135deg, #b2ebf2 0%, #80deea 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(128, 222, 234, 0.5);
+        }
+        .btn-ocr:disabled {
+            background: #e0e0e0 !important;
+            border-color: #bdbdbd !important;
+            color: #757575 !important;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+        .ocr-info {
+            font-size: 0.9rem;
+            color: #d32f2f;
+            font-weight: bold;
+        }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px;}
+        ::-webkit-scrollbar-thumb { background: #ffb6c1; border-radius: 10px;}
+        ::-webkit-scrollbar-thumb:hover { background: #ff9fb0; }
+    </style>
+</head>
+<body>
+
+    <div id="screen-1" class="screen active">
+        <h1>🌸 학급 자리 배치 프로그램 🌸</h1>
+        <div style="text-align:center;font-size:0.85rem;color:#999;margin:-18px 0 22px;">[작품] AI 기반 학교업무 통합 관리 웹앱 · 연구보고서: 생성형 AI 기반 학교업무 통합 관리 웹앱 개발을 통한 교원의 교무·수업 업무 경감 연구</div>
+        <div class="setup-container">
+            <div class="input-group">
+                <label for="class-size">👩‍🎓 학급 인원 : </label>
+                <input type="number" id="class-size" min="1" max="50" value="24"> 명
+            </div>
+            
+            <div class="layout-options">
+                <div class="layout-card" style="background-image: url('data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%23f0f8ff\'/></svg>');" onclick="goToScreen2('4rows')">
+                    <span>시험대형 4줄</span>
+                </div>
+                <div class="layout-card" style="background-image: url('data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%23e6e6fa\'/></svg>');" onclick="goToScreen2('5rows')">
+                    <span>시험대형 5줄</span>
+                </div>
+                <div class="layout-card" style="background-image: url('data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect width=\'100\' height=\'100\' fill=\'%23fff0f5\'/></svg>');" onclick="goToScreen2('3groups')">
+                    <span>3개의 분단</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-2" class="screen">
+        <div class="main-container">
+            <div class="left-panel">
+                <div class="file-upload-container">
+                    <label for="excel-upload" class="btn-upload">엑셀 파일 명렬표 업로드 📊</label>
+                    <input type="file" id="excel-upload" accept=".xlsx, .xls" style="display: none;" onchange="handleExcelUpload(event)">
+                </div>
+
+                <div class="input-list" id="input-list"></div>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="assignSeats()">자리 배치</button>
+                    <button class="btn btn-secondary" onclick="resetInputs()">초기화</button>
+                    <button class="btn btn-print" onclick="printLayout()">출력 🖨️</button>
+                    <button class="btn btn-home" onclick="goHome()">처음으로</button>
+                </div>
+            </div>
+
+            <div class="right-panel" id="capture-area">
+                <div class="board">칠 판 (교탁)</div>
+                <div class="seat-grid" id="seat-grid"></div>
+                
+                <button id="manual-btn" class="btn-manual" onclick="toggleManualEdit()">수동 입력버튼</button>
+                
+                <div class="ocr-container">
+                    <input type="file" id="ocr-upload" accept="image/png, image/jpeg" style="display: none;" onchange="loadPreviousLayout(event)">
+                    <button id="btn-ocr" class="btn-ocr" onclick="document.getElementById('ocr-upload').click()">과거 자리배치 다시 가져오기</button>
+                    <div class="ocr-info">(과거에 자리배치 다운로드한 PNG파일을 넣어주세요)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSize = 0;
+        let currentLayout = '';
+        let isManualMode = false;
+        let draggedSeat = null;
+
+        function goToScreen2(layout) {
+            const sizeInput = document.getElementById('class-size').value;
+            if(sizeInput <= 0) {
+                alert("인원을 올바르게 입력해주세요.");
+                return;
+            }
+            currentSize = parseInt(sizeInput);
+            currentLayout = layout;
+
+            document.getElementById('screen-1').classList.remove('active');
+            document.getElementById('screen-2').classList.add('active');
+
+            resetManualMode();
+            generateInputs();
+            renderEmptySeats();
+        }
+
+        function goHome() {
+            document.getElementById('screen-2').classList.remove('active');
+            document.getElementById('screen-1').classList.add('active');
+        }
+
+        function resetInputs() {
+            resetManualMode();
+            generateInputs();
+            renderEmptySeats();
+        }
+
+        function resetManualMode() {
+            isManualMode = false;
+            const btn = document.getElementById('manual-btn');
+            if(btn) {
+                btn.innerText = '수동 입력버튼';
+                btn.classList.remove('active-mode');
+            }
+            disableDragAndDrop();
+        }
+
+        function toggleManualEdit() {
+            const seatNames = document.querySelectorAll('.seat:not(.dummy) .seat-name');
+            const btn = document.getElementById('manual-btn');
+            
+            isManualMode = !isManualMode;
+            
+            if (isManualMode) {
+                btn.innerText = '수동 입력 완료';
+                btn.classList.add('active-mode');
+                seatNames.forEach(sn => sn.setAttribute('contenteditable', 'true'));
+                enableDragAndDrop(); 
+            } else {
+                btn.innerText = '수동 입력버튼';
+                btn.classList.remove('active-mode');
+                seatNames.forEach(sn => sn.removeAttribute('contenteditable'));
+                disableDragAndDrop(); 
+            }
+        }
+
+        // --- 드래그 앤 드롭 핸들러 ---
+        function handleDragStart(e) {
+            if(!isManualMode) return;
+            draggedSeat = this;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', this.id);
+            setTimeout(() => this.style.opacity = '0.4', 0);
+        }
+
+        function handleDragOver(e) {
+            if(e.preventDefault) e.preventDefault(); 
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+
+        function handleDragEnter(e) {
+            if(this !== draggedSeat) this.classList.add('over');
+        }
+
+        function handleDragLeave(e) {
+            this.classList.remove('over');
+        }
+
+        function handleDrop(e) {
+            if(e.stopPropagation) e.stopPropagation();
+            if (draggedSeat !== this && this.classList.contains('seat') && !this.classList.contains('dummy')) {
+                let draggedNameSpan = draggedSeat.querySelector('.seat-name');
+                let targetNameSpan = this.querySelector('.seat-name');
+                let temp = draggedNameSpan.innerText;
+                draggedNameSpan.innerText = targetNameSpan.innerText;
+                targetNameSpan.innerText = temp;
+            }
+            this.classList.remove('over');
+            return false;
+        }
+
+        function handleDragEnd(e) {
+            this.style.opacity = '1';
+            const seats = document.querySelectorAll('.seat');
+            seats.forEach(seat => seat.classList.remove('over'));
+        }
+
+        function enableDragAndDrop() {
+            const seats = document.querySelectorAll('.seat:not(.dummy)');
+            seats.forEach(seat => {
+                seat.setAttribute('draggable', 'true');
+                seat.addEventListener('dragstart', handleDragStart);
+                seat.addEventListener('dragenter', handleDragEnter);
+                seat.addEventListener('dragover', handleDragOver);
+                seat.addEventListener('dragleave', handleDragLeave);
+                seat.addEventListener('drop', handleDrop);
+                seat.addEventListener('dragend', handleDragEnd);
+            });
+        }
+
+        function disableDragAndDrop() {
+            const seats = document.querySelectorAll('.seat:not(.dummy)');
+            seats.forEach(seat => {
+                seat.setAttribute('draggable', 'false');
+                seat.removeEventListener('dragstart', handleDragStart);
+                seat.removeEventListener('dragenter', handleDragEnter);
+                seat.removeEventListener('dragover', handleDragOver);
+                seat.removeEventListener('dragleave', handleDragLeave);
+                seat.removeEventListener('drop', handleDrop);
+                seat.removeEventListener('dragend', handleDragEnd);
+            });
+        }
+        // ------------------------------------
+
+        function generateInputs() {
+            const container = document.getElementById('input-list');
+            container.innerHTML = '';
+            
+            // 중간자리 및 중간짝1 옵션 추가 (적절한 순서로 배치)
+            let posOptionsHTML = `
+                <option value="앞자리">앞자리</option>
+                <option value="중간자리">중간자리</option>
+                <option value="뒷자리" selected>뒷자리</option>
+                <option value="앞짝1">앞짝1</option>
+                <option value="중간짝1">중간짝1</option>
+                <option value="뒷짝1">뒷짝1</option>
+                <option value="고정">고정</option>
+            `;
+
+            let seatOptionsHTML = `<option value="">좌석</option>`;
+            for(let j=1; j<=currentSize; j++) {
+                seatOptionsHTML += `<option value="${j}">${j}번</option>`;
+            }
+
+            for(let i=0; i<currentSize; i++) {
+                const row = document.createElement('div');
+                row.className = 'student-row';
+                row.innerHTML = `
+                    <select class="pos-select">${posOptionsHTML}</select>
+                    <input type="text" class="name-input" placeholder="이름 입력">
+                    <select class="fixed-seat-select" disabled>${seatOptionsHTML}</select>
+                `;
+                container.appendChild(row);
+            }
+
+            const posSelects = container.querySelectorAll('.pos-select');
+            posSelects.forEach(select => {
+                select.addEventListener('change', (e) => {
+                    const fixedSelect = e.target.parentElement.querySelector('.fixed-seat-select');
+                    if(e.target.value === '고정') {
+                        fixedSelect.disabled = false;
+                    } else {
+                        fixedSelect.disabled = true;
+                        fixedSelect.value = '';
+                    }
+                });
+            });
+        }
+
+        function handleExcelUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                const json = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+                const nameInputs = document.querySelectorAll('.name-input');
+                let inputIndex = 0;
+
+                for (let i = 0; i < json.length; i++) {
+                    const row = json[i];
+                    if (!row || row.length < 2) continue;
+                    
+                    const num = row[0];
+                    const name = row[1];
+
+                    if (num === "번호" || name === "이름") continue;
+                    
+                    if (inputIndex < nameInputs.length) {
+                        nameInputs[inputIndex].value = `${num}.${name}`;
+                        inputIndex++;
+                    } else {
+                        break;
+                    }
+                }
+                event.target.value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- 과거 자리배치 파일 OCR 자동 분석기능 ---
+        async function loadPreviousLayout(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const btn = document.getElementById('btn-ocr');
+            const originalText = btn.innerText;
+            
+            // 버튼 상태를 로딩 중으로 변경
+            btn.innerText = '🔄 이미지 분석 중... (잠시만 대기)';
+            btn.disabled = true;
+
+            try {
+                // Tesseract.js 를 사용하여 한국어 텍스트 추출
+                const result = await Tesseract.recognize(file, 'kor', {
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            btn.innerText = `🔄 자리 배치도 복원 중... ${Math.round(m.progress * 100)}%`;
+                        }
+                    }
+                });
+
+                const text = result.data.text;
+                
+                // 숫자.이름 패턴을 정규식으로 유연하게 추출 (예: "1.임시아", "24.한서윤")
+                const regex = /(\d+)\s*[.,]?\s*([가-힣]{2,4})/g;
+                let matches;
+                let parsedStudents = [];
+
+                while ((matches = regex.exec(text)) !== null) {
+                    const num = parseInt(matches[1]);
+                    // 실제 학급 인원 번호 범위 필터링 (오인식 방지)
+                    if (num >= 1 && num <= 50) {
+                        parsedStudents.push({
+                            num: num,
+                            name: `${num}.${matches[2]}`
+                        });
+                    }
+                }
+
+                // 중복 인식 제거 로직
+                let uniqueStudents = [];
+                let seenNames = new Set();
+                for (let s of parsedStudents) {
+                    if (!seenNames.has(s.name)) {
+                        seenNames.add(s.name);
+                        uniqueStudents.push(s);
+                    }
+                }
+
+                if (uniqueStudents.length === 0) {
+                    alert('업로드하신 이미지에서 이름 정보를 인식하지 못했습니다. 글자가 선명한 기존 다운로드 파일을 사용해 주세요.');
+                    return;
+                }
+
+                // 1. 영역 1 복원 (오른쪽 칠판 자리 배치 영역)
+                const seats = document.querySelectorAll('.seat:not(.dummy)');
+                for (let i = 0; i < seats.length; i++) {
+                    const nameSpan = seats[i].querySelector('.seat-name');
+                    if (nameSpan) {
+                        nameSpan.innerText = i < uniqueStudents.length ? uniqueStudents[i].name : '';
+                    }
+                }
+
+                // 2. 영역 2 복원 (왼쪽 리스트 번호순 정렬 영역)
+                const sortedStudents = [...uniqueStudents].sort((a, b) => a.num - b.num);
+                const nameInputs = document.querySelectorAll('.name-input');
+                
+                for(let i = 0; i < nameInputs.length; i++) {
+                    if (i < sortedStudents.length) {
+                        nameInputs[i].value = sortedStudents[i].name;
+                    } else {
+                        nameInputs[i].value = '';
+                    }
+                }
+
+                alert('✅ 과거 자리 배치를 성공적으로 불러왔습니다!');
+            } catch (error) {
+                console.error('OCR 에러발생:', error);
+                alert('이미지 분석 처리 중 오류가 발생했습니다.');
+            } finally {
+                // 버튼 원상복구
+                btn.innerText = originalText;
+                btn.disabled = false;
+                event.target.value = '';
+            }
+        }
+
+        function renderEmptySeats() {
+            const grid = document.getElementById('seat-grid');
+            grid.innerHTML = '';
+            grid.className = 'seat-grid layout-' + currentLayout;
+
+            let seatCount = 0;
+            let totalRows = 0;
+
+            if(currentLayout === '3groups') {
+                totalRows = Math.ceil(currentSize / 6);
+                let row = 0;
+                while(row < totalRows) {
+                    for(let col = 0; col < 8; col++) {
+                        if(col === 2 || col === 5) { 
+                            const spacer = document.createElement('div');
+                            spacer.className = 'seat empty';
+                            grid.appendChild(spacer);
+                        } else { 
+                            seatCount++;
+                            const seat = document.createElement('div');
+                            if (seatCount <= currentSize) {
+                                seat.className = 'seat';
+                                seat.id = `seat-${seatCount}`;
+                                seat.innerHTML = `<span class="seat-number">${seatCount}</span><span class="seat-name"></span>`;
+                            } else {
+                                seat.className = 'seat empty dummy';
+                            }
+                            grid.appendChild(seat);
+                        }
+                    }
+                    row++;
+                }
+            } else {
+                let cols = currentLayout === '4rows' ? 4 : 5;
+                totalRows = Math.ceil(currentSize / cols);
+                let totalCells = totalRows * cols;
+                for(let i=1; i<=totalCells; i++) {
+                    const seat = document.createElement('div');
+                    if (i <= currentSize) {
+                        seat.className = 'seat';
+                        seat.id = `seat-${i}`;
+                        seat.innerHTML = `<span class="seat-number">${i}</span><span class="seat-name"></span>`;
+                    } else {
+                        seat.className = 'seat empty dummy';
+                    }
+                    grid.appendChild(seat);
+                }
+            }
+        }
+
+        function getValidPairs(indices, layout) {
+            let pairs = [];
+            if(layout === '3groups') {
+                for(let i = 0; i < indices.length - 1; i++) {
+                    let current = indices[i];
+                    let next = indices[i+1];
+                    if(next === current + 1) {
+                        if(current % 6 === 0 || current % 6 === 2 || current % 6 === 4) {
+                            pairs.push([current, next]);
+                        }
+                    }
+                }
+            } else {
+                let cols = layout === '4rows' ? 4 : 5;
+                for(let i = 0; i < indices.length - 1; i++) {
+                    let current = indices[i];
+                    let next = indices[i+1];
+                    if(next === current + 1 && (current % cols !== cols - 1)) {
+                        pairs.push([current, next]);
+                    }
+                }
+            }
+            return pairs;
+        }
+
+        function assignSeats() {
+            resetManualMode();
+
+            const rows = document.querySelectorAll('.student-row');
+            let students = [];
+            let hasEmptyName = false;
+
+            rows.forEach((row) => {
+                const pos = row.querySelector('.pos-select').value;
+                const name = row.querySelector('.name-input').value.trim();
+                const fixedSeatVal = row.querySelector('.fixed-seat-select').value;
+                const fixedSeat = fixedSeatVal !== "" ? parseInt(fixedSeatVal) : null;
+
+                if(name === "") hasEmptyName = true;
+                students.push({ pos: pos, name: name, fixedSeat: fixedSeat });
+            });
+
+            if(hasEmptyName) {
+                alert("빈칸을 모두 입력하세요.");
+                return;
+            }
+
+            const fixedGroup = students.filter(s => s.pos === '고정');
+            let fixedSeatsTaken = new Set();
+            for(let s of fixedGroup) {
+                if(!s.fixedSeat) {
+                    alert("고정 학생에 좌석 번호를 입력해 주세요.");
+                    return;
+                }
+                if(fixedSeatsTaken.has(s.fixedSeat)) {
+                    alert("고정 좌석에 중복이 있습니다.");
+                    return;
+                }
+                fixedSeatsTaken.add(s.fixedSeat);
+            }
+
+            // 앞짝1, 중간짝1, 뒷짝1 인원수 검증 (0명 또는 2명)
+            const frontPairCount = students.filter(s => s.pos === '앞짝1').length;
+            const middlePairCount = students.filter(s => s.pos === '중간짝1').length;
+            const backPairCount = students.filter(s => s.pos === '뒷짝1').length;
+
+            if(frontPairCount !== 0 && frontPairCount !== 2) {
+                alert("앞짝은 2명이거나 0명이어야 합니다.");
+                return;
+            }
+            if(middlePairCount !== 0 && middlePairCount !== 2) {
+                alert("중간짝은 2명이거나 0명이어야 합니다.");
+                return;
+            }
+            if(backPairCount !== 0 && backPairCount !== 2) {
+                alert("뒤짝은 2명이거나 0명이어야 합니다.");
+                return;
+            }
+
+            let finalArrangement = new Array(currentSize).fill(null);
+
+            fixedGroup.forEach(s => {
+                finalArrangement[s.fixedSeat - 1] = s; 
+            });
+
+            let availableIndices = [];
+            for(let i=0; i<currentSize; i++) {
+                if(finalArrangement[i] === null) {
+                    availableIndices.push(i);
+                }
+            }
+
+            // 앞자리, 중간자리, 뒷자리 3개 그룹으로 분리
+            const frontGroup = students.filter(s => s.pos === '앞자리' || s.pos === '앞짝1');
+            const middleGroup = students.filter(s => s.pos === '중간자리' || s.pos === '중간짝1');
+            const backGroup = students.filter(s => s.pos === '뒷자리' || s.pos === '뒷짝1');
+            
+            // 빈 좌석 인덱스를 앞 -> 중간 -> 뒤 그룹 인원수만큼 순차 분할
+            let frontIndices = availableIndices.slice(0, frontGroup.length);
+            let middleIndices = availableIndices.slice(frontGroup.length, frontGroup.length + middleGroup.length);
+            let backIndices = availableIndices.slice(frontGroup.length + middleGroup.length);
+
+            // 1. 앞짝1 배치
+            let frontPairStudents = frontGroup.filter(s => s.pos === '앞짝1');
+            if(frontPairStudents.length === 2) {
+                let validPairs = getValidPairs(frontIndices, currentLayout);
+                if(validPairs.length > 0) {
+                    let chosenPair = validPairs[Math.floor(Math.random() * validPairs.length)];
+                    finalArrangement[chosenPair[0]] = frontPairStudents[0];
+                    finalArrangement[chosenPair[1]] = frontPairStudents[1];
+                    frontIndices = frontIndices.filter(idx => idx !== chosenPair[0] && idx !== chosenPair[1]);
+                } else {
+                    finalArrangement[frontIndices[0]] = frontPairStudents[0];
+                    finalArrangement[frontIndices[1]] = frontPairStudents[1];
+                    frontIndices.splice(0, 2);
+                }
+            }
+
+            // 2. 중간짝1 배치
+            let middlePairStudents = middleGroup.filter(s => s.pos === '중간짝1');
+            if(middlePairStudents.length === 2) {
+                let validPairs = getValidPairs(middleIndices, currentLayout);
+                if(validPairs.length > 0) {
+                    let chosenPair = validPairs[Math.floor(Math.random() * validPairs.length)];
+                    finalArrangement[chosenPair[0]] = middlePairStudents[0];
+                    finalArrangement[chosenPair[1]] = middlePairStudents[1];
+                    middleIndices = middleIndices.filter(idx => idx !== chosenPair[0] && idx !== chosenPair[1]);
+                } else {
+                    finalArrangement[middleIndices[0]] = middlePairStudents[0];
+                    finalArrangement[middleIndices[1]] = middlePairStudents[1];
+                    middleIndices.splice(0, 2);
+                }
+            }
+
+            // 3. 뒷짝1 배치
+            let backPairStudents = backGroup.filter(s => s.pos === '뒷짝1');
+            if(backPairStudents.length === 2) {
+                let validPairs = getValidPairs(backIndices, currentLayout);
+                if(validPairs.length > 0) {
+                    let chosenPair = validPairs[Math.floor(Math.random() * validPairs.length)];
+                    finalArrangement[chosenPair[0]] = backPairStudents[0];
+                    finalArrangement[chosenPair[1]] = backPairStudents[1];
+                    backIndices = backIndices.filter(idx => idx !== chosenPair[0] && idx !== chosenPair[1]);
+                } else {
+                    finalArrangement[backIndices[0]] = backPairStudents[0];
+                    finalArrangement[backIndices[1]] = backPairStudents[1];
+                    backIndices.splice(0, 2);
+                }
+            }
+
+            // 나머지 일반 자리(앞자리, 중간자리, 뒷자리) 무작위 섞기 및 배치
+            let remainingFront = frontGroup.filter(s => s.pos === '앞자리');
+            let remainingMiddle = middleGroup.filter(s => s.pos === '중간자리');
+            let remainingBack = backGroup.filter(s => s.pos === '뒷자리');
+
+            remainingFront.sort(() => Math.random() - 0.5);
+            remainingMiddle.sort(() => Math.random() - 0.5);
+            remainingBack.sort(() => Math.random() - 0.5);
+
+            frontIndices.forEach((idx, i) => { finalArrangement[idx] = remainingFront[i]; });
+            middleIndices.forEach((idx, i) => { finalArrangement[idx] = remainingMiddle[i]; });
+            backIndices.forEach((idx, i) => { finalArrangement[idx] = remainingBack[i]; });
+
+            for(let i=0; i<currentSize; i++) {
+                const seatElement = document.getElementById(`seat-${i+1}`);
+                if(seatElement) {
+                    if(finalArrangement[i]) {
+                        seatElement.querySelector('.seat-name').innerText = finalArrangement[i].name;
+                    } else {
+                        seatElement.querySelector('.seat-name').innerText = '';
+                    }
+                    seatElement.querySelector('.seat-name').removeAttribute('contenteditable');
+                }
+            }
+        }
+
+        function downloadImage() {
+            const captureArea = document.getElementById('capture-area');
+            const manualBtn = document.getElementById('manual-btn');
+            const ocrContainer = document.querySelector('.ocr-container');
+            
+            // 캡처 시 버튼 영역 숨김
+            if(manualBtn) manualBtn.style.display = 'none';
+            if(ocrContainer) ocrContainer.style.display = 'none';
+
+            html2canvas(captureArea, {
+                scale: 2, 
+                backgroundColor: "#ffffff"
+            }).then(canvas => {
+                // 캡처 후 다시 표시
+                if(manualBtn) manualBtn.style.display = 'block';
+                if(ocrContainer) ocrContainer.style.display = 'flex';
+
+                // 시간 포함된 파일명 생성 (년월일시분)
+                const today = new Date();
+                const yyyy = today.getFullYear();
+                const mm = String(today.getMonth() + 1).padStart(2, '0');
+                const dd = String(today.getDate()).padStart(2, '0');
+                const hh = String(today.getHours()).padStart(2, '0');
+                const min = String(today.getMinutes()).padStart(2, '0');
+                const dateStr = `${yyyy}${mm}${dd}${hh}${min}`;
+
+                const link = document.createElement('a');
+                link.download = `${dateStr} 자리배치.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        }
+
+        function printLayout() {
+            downloadImage();
+
+            const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+                alert("❗ 브라우저 우측 상단의 '팝업 차단'을 해제(항상 허용)해 주셔야 인쇄 창이 열립니다!");
+                return;
+            }
+            
+            const styles = document.querySelector('style').innerHTML;
+            const gridHTML = document.querySelector('.seat-grid').outerHTML;
+            
+            const gridClone = document.querySelector('.seat-grid').cloneNode(true);
+            const seats = Array.from(gridClone.children);
+            seats.reverse();
+            gridClone.innerHTML = '';
+            seats.forEach(seat => {
+                seat.removeAttribute('id');
+                gridClone.appendChild(seat);
+            });
+            const teacherGridHTML = gridClone.outerHTML;
+
+            printWindow.document.write(`
+                <!DOCTYPE html>
+                <html lang="ko">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>자리 배치도 출력</title>
+                    <style>
+                        ${styles}
+                        body { 
+                            background: white !important; 
+                            padding: 20px !important; 
+                            display: block !important; 
+                            -webkit-print-color-adjust: exact; 
+                            print-color-adjust: exact; 
+                        }
+                        .seat { border-color: #aaa !important; background-color: #fff !important; }
+                        .board { border: 1px solid #ccc !important; background-color: #eee !important; color: #333 !important; }
+                        
+                        .layout-4rows { grid-template-columns: repeat(4, 100px) !important; }
+                        .layout-5rows { grid-template-columns: repeat(5, 100px) !important; }
+                        .layout-3groups { grid-template-columns: 100px 100px 30px 100px 100px 30px 100px 100px !important; }
+                        .seat { width: 100px !important; height: 70px !important; font-size: 1.1rem !important; }
+                        .seat-grid { gap: 15px !important; }
+
+                        .page-normal { display: flex; flex-direction: column; align-items: center; width: 100%; }
+                        .page-break { display: flex; flex-direction: column; align-items: center; width: 100%; page-break-before: always; padding-top: 30px; }
+                        .print-title-text { font-size: 2rem; font-weight: bold; margin-bottom: 30px; color: black; }
+                        /* 인쇄 시 버튼 안 보이게 처리 */
+                        .btn-manual, .ocr-container { display: none !important; } 
+                    </style>
+                </head>
+                <body>
+                    <div class="page-normal">
+                        <div class="print-title-text">자리 배치도</div>
+                        <div class="board">칠 판 (교탁)</div>
+                        ${gridHTML}
+                    </div>
+
+                    <div class="page-break">
+                        ${teacherGridHTML}
+                        <div class="board" style="margin-top: 30px; margin-bottom: 30px;">칠 판 (교탁)</div>
+                        <div class="print-title-text">자리 배치도</div>
+                    </div>
+
+                    <script>
+                        window.onload = function() {
+                            setTimeout(function() {
+                                window.print();
+                            }, 500);
+                        };
+                    <\/script>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+        }
+
+    </script>
+</body>
+</html>
